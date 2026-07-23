@@ -1,10 +1,10 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass
 
 from app.settings import settings
 
 
-class Base(DeclarativeBase):
+class Base(MappedAsDataclass, DeclarativeBase, kw_only=True):
     pass
 
 
