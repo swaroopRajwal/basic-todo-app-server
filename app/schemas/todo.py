@@ -1,5 +1,8 @@
+from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
+
+from app.schemas.api_request import PaginationParamsSchema, SortParamsSchema
 
 
 class TodoBase(BaseModel):
@@ -26,3 +29,13 @@ class TodoResponse(TodoBase):
 
     # Pydantic V2 config to allow reading from SQLAlchemy ORM objects
     model_config = ConfigDict(from_attributes=True)
+
+
+class TodoSortField(str, Enum):
+    title = "title"
+    created_at = "created_at"
+    updated_at = "updated_at"
+
+
+class TodoQueryParamsSchema(PaginationParamsSchema, SortParamsSchema[TodoSortField]):
+    is_completed: bool | None = None

@@ -1,6 +1,7 @@
-from app.schemas.api_response import ResponseSchema
-from app.schemas.todo import TodoCreate, TodoUpdate
-from sqlalchemy import select
+from app.schemas.api_response import ResponseSchema, PaginatedResponseSchema
+from app.schemas.api_request import SortOrder
+from app.schemas.todo import TodoCreate, TodoUpdate, TodoQueryParamsSchema, TodoSortField
+from sqlalchemy import select, func, asc, desc
 from app.database.models.todo import TodoTable
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
@@ -20,6 +21,36 @@ class TodoService:
         return ResponseSchema(
             status=True,
             data=new_todo,
+        )
+
+    async def get_all_todos(self, db: AsyncSession, params: TodoQueryParamsSchema):
+        stmt = select(TodoTable)
+
+        if params.search:
+            stmt = stmt.where(TodoTable.title.ilike(f"%{params.search}%"))
+
+        if params.is_completed is not None:
+            stmt = stmt.where(TodoTable.is_completed == params.is_completed)
+
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = (await db.execute(count_stmt)).scalar_one()
+
+        sort_field = params.sort_by or TodoSortField.created_at
+        sort_column = getattr(TodoTable, sort_field.value)
+        order_fn = asc if params.sort_order == SortOrder.asc else desc
+        stmt = stmt.order_by(order_fn(sort_column))
+
+        stmt = stmt.offset((params.page - 1) * params.limit).limit(params.limit)
+
+        result = await db.execute(stmt)
+        todos = result.scalars().all()
+
+        return PaginatedResponseSchema(
+            status=True,
+            data=todos,
+            page=params.page,
+            limit=params.limit,
+            count=total,
         )
 
     async def get_single_todo(self, db: AsyncSession, id: str):

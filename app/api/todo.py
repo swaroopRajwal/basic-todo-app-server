@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, status
-from app.schemas.todo import TodoResponse, TodoCreate, TodoUpdate
-from app.schemas.api_response import ResponseSchema
+from app.schemas.todo import TodoResponse, TodoCreate, TodoUpdate, TodoQueryParamsSchema
+from app.schemas.api_response import ResponseSchema, PaginatedResponseSchema
 from app.database.db import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.todos import todo_service
@@ -9,13 +9,12 @@ from app.services.todos import todo_service
 router = APIRouter()
 
 
-# @todoRouter.post("/", response_model=PaginatedResponseSchema[TodoResponse])
-# async def get_all_todos(
-#     params: PaginationParamsSchema,
-#     db: AsyncSession = Depends(get_db),
-# ):
-
-#     pass
+@router.get("", response_model=PaginatedResponseSchema[TodoResponse])
+async def get_all_todos(
+    params: TodoQueryParamsSchema = Depends(),
+    db: AsyncSession = Depends(get_db),
+):
+    return await todo_service.get_all_todos(db, params)
 
 
 @router.post(
