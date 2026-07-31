@@ -5,11 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.db import get_db
 from app.database.models.health import HealthTable
 from sqlalchemy import select
-from app.api import todo
+from app.api import tag, todo
 
 app = FastAPI(title="Basic Todo App Server")
 
 app.include_router(todo.router, prefix="/api/todo", tags=["todo"])
+app.include_router(tag.router, prefix="/api/tag", tags=["tag"])
 
 
 @app.get("/")

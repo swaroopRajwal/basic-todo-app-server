@@ -2,13 +2,39 @@ from app.schemas.api_response import ResponseSchema, PaginatedResponseSchema
 from app.schemas.api_request import SortOrder
 from app.schemas.todo import TodoCreate, TodoUpdate, TodoQueryParamsSchema, TodoSortField
 from sqlalchemy import select, func, asc, desc
+from sqlalchemy.orm import selectinload
 from app.database.models.todo import TodoTable
+from app.database.models.tags import TagsTable
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 from app.utils import get_id
 
 
 class TodoService:
+    async def _get_todo_by_id(self, db: AsyncSession, id: str) -> TodoTable | None:
+        result = await db.execute(
+            select(TodoTable)
+            .options(selectinload(TodoTable.tags))
+            .where(TodoTable.id == id)
+        )
+        return result.scalars().first()
+
+    async def _get_tags_by_ids(
+        self, db: AsyncSession, tag_ids: list[str]
+    ) -> list[TagsTable]:
+        if not tag_ids:
+            return []
+
+        result = await db.execute(select(TagsTable).where(TagsTable.id.in_(tag_ids)))
+        tags = result.scalars().all()
+        found_ids = {tag.id for tag in tags}
+        if any(tag_id not in found_ids for tag_id in tag_ids):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found"
+            )
+
+        return tags
+
     async def create_todo(self, db: AsyncSession, data: TodoCreate):
         new_todo = TodoTable(
             id=get_id(),
@@ -17,14 +43,14 @@ class TodoService:
         )
         db.add(new_todo)
         await db.commit()
-        await db.refresh(new_todo)
+        new_todo = await self._get_todo_by_id(db, new_todo.id)
         return ResponseSchema(
             status=True,
             data=new_todo,
         )
 
     async def get_all_todos(self, db: AsyncSession, params: TodoQueryParamsSchema):
-        stmt = select(TodoTable)
+        stmt = select(TodoTable).options(selectinload(TodoTable.tags))
 
         if params.search:
             stmt = stmt.where(TodoTable.title.ilike(f"%{params.search}%"))
@@ -54,8 +80,7 @@ class TodoService:
         )
 
     async def get_single_todo(self, db: AsyncSession, id: str):
-        result = await db.execute(select(TodoTable).where(TodoTable.id == id))
-        todo = result.scalars().first()
+        todo = await self._get_todo_by_id(db, id)
 
         if todo:
             return ResponseSchema(
@@ -69,9 +94,7 @@ class TodoService:
         )
 
     async def update_single_todo(self, db: AsyncSession, id: str, data: TodoUpdate):
-        result = await db.execute(select(TodoTable).where(TodoTable.id == id))
-
-        todo = result.scalars().first()
+        todo = await self._get_todo_by_id(db, id)
 
         if not todo:
             raise HTTPException(
@@ -80,20 +103,22 @@ class TodoService:
             )
 
         updated_todo = data.model_dump(exclude_unset=True)
+        tag_ids = updated_todo.pop("tag_ids", None)
         for field, value in updated_todo.items():
             setattr(todo, field, value)
 
+        if tag_ids is not None:
+            todo.tags = await self._get_tags_by_ids(db, list(dict.fromkeys(tag_ids)))
+
         await db.commit()
-        await db.refresh(todo)
+        todo = await self._get_todo_by_id(db, id)
         return ResponseSchema(
             status=True,
             data=todo,
         )
 
     async def delete_single_todo(self, db: AsyncSession, id: str):
-        result = await db.execute(select(TodoTable).where(TodoTable.id == id))
-
-        todo = result.scalars().first()
+        todo = await self._get_todo_by_id(db, id)
 
         if not todo:
             raise HTTPException(
